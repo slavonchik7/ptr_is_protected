@@ -19,14 +19,6 @@ typedef addr_t ptr_id_t;
 
 
 
-
-
-
-
-
-
-
-
 /*
 
 
@@ -65,8 +57,10 @@ typedef addr_t ptr_id_t;
 /*
  * возможные значения флага, с которым может инициализироваться структура track_ptr_t
  */
-#define TRACK_ADDR_PROTECT      0b00000001
-#define TRACK_ADDR_CHECK_SUM    0b00000010
+#define TRACK_FLAGS_NOT_SET         0b00000000
+#define TRACK_FLAG_ADDR_PROTECT     0b00000010
+#define TRACK_FLAG_ADDR_CHECK_SUM   0b00000100
+
 
 
 /*
@@ -77,6 +71,7 @@ typedef addr_t ptr_id_t;
 #define ETRACK_WENT_UPPER_LIMIT      15
 
 
+#define TRACK_CHECK_IS_FLAG(fset, f) ( ( fset & f ) != 0 )
 
 
 
@@ -93,7 +88,7 @@ typedef struct {
 
 
     /*
-     * указатель на узел списка, в котором хранятся все
+     * указатель на данные, хранящиеся в узле списка, в котором хранятся все
      * когда-либо выделенные структуры (и выделенная память)
      */
     void *__tptr;
@@ -117,8 +112,51 @@ typedef struct {
 
 
 
-extern int track_last_error(void);
+/*
+ * функция возвращает последнюю произошедшую ошибку
+ * при работе с памятью в структуре ptrack
+ * @ptrack: указатель на пользовательскую структуру данных,
+ *      через которую осуществляется управление выделенной памятью
+ */
+extern int track_last_error(track_ptr_t *ptrack);
+
+/*
+ * функция возвращает сообщение соответствующее ошибке errnum,
+ * @errnum: значение полученое из функции track_last_error
+ */
 extern const char *track_str_error(int errnum);
+
+
+/*
+ * функция инициализирует структуры и переменные,
+ * необходимые для работы библиотеки
+ */
+extern int track_init(void);
+
+
+/*
+ * функция очищает структуры и переменные (освобождает память),
+ * которые были необходимы во время работы библиотеки
+ */
+extern int track_destroy(void);
+
+
+/*
+ * выделения памяти размером msize байт
+ * и инициализация структуры track_ptr_t
+ * @msize: количество байт для выделения
+ * @flags: битовые поля отвечающие за
+ *      варианты работы с выделенной памятью
+ */
+extern track_ptr_t *track_malloc(size_t msize, int flags);
+
+
+/*
+ * функция пересчитывает контрольную сумму текущей выделенной памяти
+ * @ptrack: указатель на пользовательскую структуру данных,
+ *      через которую осуществляется управление выделенной памятью
+ */
+extern int track_overwrite_checksum(track_ptr_t *ptrack);
 
 
 #endif /* TRACKPTR_H */
