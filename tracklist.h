@@ -159,7 +159,8 @@ static inline int dht_list_func_full_free(dht_list_t *l, void func_free(void *))
     while ( pos ) {
         npl_node_t *next = pos->next;
 
-        func_free(pos->data);
+        if ( func_free )
+            func_free(pos->data);
         free(pos);
 
         pos = next;
