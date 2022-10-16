@@ -57,21 +57,33 @@ typedef addr_t ptr_id_t;
 /*
  * возможные значения флага, с которым может инициализироваться структура track_ptr_t
  */
-#define TRACK_FLAGS_NOT_SET         0b00000000
-#define TRACK_FLAG_ADDR_PROTECT     0b00000010
-#define TRACK_FLAG_ADDR_CHECK_SUM   0b00000100
+#define TRACK_FLAGS_NOT_SET         (0b00000000)
+#define TRACK_FLAG_ADDR_PROTECT     (0b00000010)
+#define TRACK_FLAG_ADDR_CHECK_SUM   (0b00000100)
 
 
 
 /*
  * возможные ошибки, во время работы со структурой track_ptr_t и памятью
  */
-#define ETRACK_MEM_WAS_CHANGED       13
-#define ETRACK_WENT_LOWER_LIMIT      14
-#define ETRACK_WENT_UPPER_LIMIT      15
-
+#define ETRACK_MEM_WAS_CHANGED          13
+#define ETRACK_WENT_LOWER_LIMIT         14
+#define ETRACK_WENT_UPPER_LIMIT         15
+#define ETRACK_MEM_NOT_FOUND            16
+#define ETRACK_NULL_PTR_PASSED          17
+#define ETRACK_INIT_REQUIRED            18
+#define ETRACK_ALLOC                    19
+#define ETRACK_INIT_TWICE               20
 
 #define TRACK_CHECK_IS_FLAG(fset, f) ( ( fset & f ) != 0 )
+
+
+
+
+
+
+
+extern int errtrack;
 
 
 
@@ -95,17 +107,10 @@ typedef struct {
 
 
     /*
-     * переменна хранит тип, который и будет использован для интерпритации
-     * выделенной памяти по void * указателю
-     * к примеру, для инкрементирования указателя
+     * число байт, которым задётся шаг инкремента и декремента
+     * для текущей выделенной памяти
      */
-    int interpretation_type;
-
-    /*
-     * в переменной будет содержаться код последней ошибки
-     * (при проверки это значения и получении его, значение будет сброшено) ?????
-     */
-     int last_error;
+    int iter_step;
 
 } track_ptr_t;
 
@@ -113,12 +118,10 @@ typedef struct {
 
 
 /*
- * функция возвращает последнюю произошедшую ошибку
- * при работе с памятью в структуре ptrack
- * @ptrack: указатель на пользовательскую структуру данных,
- *      через которую осуществляется управление выделенной памятью
+ * функция возвращает последнюю произошедшую ошибку errtrack
+ * и сбрасывает значение этой переменной
  */
-extern int track_last_error(track_ptr_t *ptrack);
+extern int track_last_error(void);
 
 /*
  * функция возвращает сообщение соответствующее ошибке errnum,
@@ -150,6 +153,15 @@ extern int track_destroy(void);
  */
 extern track_ptr_t *track_malloc(size_t msize, int flags);
 
+
+/*
+ * функция очищает выделенную по запросу пользователя память
+ * а также очищает память выделенную под управляющие структуры
+ * в том числе под переданную ptrack
+ * @ptrack: указатель на пользовательскую структуру данных,
+ *      через которую осуществляется управление выделенной памятью
+ */
+extern int track_free(track_ptr_t *ptrack);
 
 /*
  * функция пересчитывает контрольную сумму текущей выделенной памяти

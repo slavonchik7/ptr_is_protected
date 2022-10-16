@@ -9,6 +9,15 @@
 #include "tracklist.h"
 #include "trackptr.h"
 
+#define __TRACK_CHECK_EXIT_INIT_REQ(ret) \
+    do { \
+        if ( !main_track_list ) { \
+            errtrack = ETRACK_INIT_REQUIRED; \
+            return ret; \
+        } \
+    } while ( 0 )
+
+
 
 
 /*
@@ -17,8 +26,18 @@
 static const char ETRACK_MEM_WAS_CHANGED_MSG[]      = "the memory was changed without the knowledge";
 static const char ETRACK_WENT_LOWER_LIMIT_MSG[]     = "went beyond the lower limit of the available allocated address space";
 static const char ETRACK_WENT_UPPER_LIMIT_MSG[]     = "went beyond the upper limit of the available allocated address space";
+static const char ETRACK_MEM_NOT_FOUND_MSG[]        = "the passed structure does not manage any allocated memory";
+static const char ETRACK_NULL_PTR_PASSED_MSG[]      = "a null pointer was passed to the function";
+static const char ETRACK_INIT_REQUIRED_MSG[]        = "initialization is required, first you should call track_init()";
+static const char ETRACK_ALLOC_MSG[]                = "could not allocate the requested memory or memory for the control structure";
+static const char ETRACK_INIT_TWICE_MSG[]               = "track_init() has already been called before";
+
 static const char ETRACK_UNKNOW_ERROR_MSG[]         = "unknown error";
 
+
+/*
+no allocated memory managed by the passed structure was found
+*/
 
 
 
@@ -30,9 +49,14 @@ static const char ETRACK_UNKNOW_ERROR_MSG[]         = "unknown error";
 static dht_list_t *main_track_list = NULL;
 
 
+/*
+ * переменная, для хранения кода последней произошедшей ошибки
+ */
+ int errtrack = 0;
 
 
-int track_last_error(track_ptr_t *ptrack);
+
+int track_last_error(void);
 const char *track_str_error(int errnum);
 
 
@@ -42,6 +66,8 @@ int track_init(void);
 int track_destroy(void);
 
 track_ptr_t *track_malloc(size_t msize, int flags);
+
+int track_free(track_ptr_t *ptrack);
 
 int track_overwrite_checksum(track_ptr_t *ptrack);
 
@@ -151,8 +177,9 @@ static void __track_main_list_node_data_free(void *ptr) {
 
     if ( pscore != NULL )
         printf("OK\n");
+
     /* очистка выделяемой для пользователя памяти */
-    free( (void *)(pscore->save_ptr) );
+    free( (void *)(pscore->mem_start_addr) );
 
     /* очистка памяти, выделенной под структуру пользователя track_ptr_t */
     free( (void *)(pscore->user_track_data) );
@@ -173,11 +200,11 @@ static int __track_calc_mem_checksum(
 
 
 
-int track_last_error(track_ptr_t *ptrack) {
+int track_last_error(void) {
 
-    int lerr = ptrack->last_error;
+    int lerr = errtrack;
 
-    ptrack->last_error = 0;
+    errtrack = 0;
 
     return lerr;
 }
@@ -195,6 +222,21 @@ const char *track_str_error(int errnum) {
 
         case ETRACK_WENT_UPPER_LIMIT:
             return ETRACK_WENT_UPPER_LIMIT_MSG;
+
+        case ETRACK_MEM_NOT_FOUND:
+            return ETRACK_MEM_NOT_FOUND_MSG;
+
+        case ETRACK_NULL_PTR_PASSED:
+            return ETRACK_NULL_PTR_PASSED_MSG;
+
+        case ETRACK_INIT_REQUIRED:
+            return ETRACK_INIT_REQUIRED_MSG;
+
+        case ETRACK_ALLOC:
+            return ETRACK_ALLOC_MSG;
+
+        case ETRACK_INIT_TWICE:
+            return ETRACK_INIT_TWICE_MSG;
 
         default:
             return ETRACK_UNKNOW_ERROR_MSG;
@@ -217,8 +259,10 @@ int track_init(void) {
      * если список уже иннициализирован
      * то есть пользователь ранее уже вызывал эту функцию
      */
-    if ( main_track_list )
+    if ( main_track_list ) {
+        errtrack = ETRACK_INIT_TWICE;
         return -1;
+    }
 
     DHT_LIST_INIT(main_track_list);
 
@@ -229,6 +273,8 @@ int track_init(void) {
 }
 
 int track_destroy(void) {
+
+    __TRACK_CHECK_EXIT_INIT_REQ(-1);
 
     /* очистка списка */
     dht_list_func_full_free(main_track_list,
@@ -245,19 +291,20 @@ int track_destroy(void) {
 
 track_ptr_t *track_malloc(size_t msize, int flags) {
 
+
+
     /*
      * если главный список не был инициализирован
      * то есть пользователь не вызвал функцию track_init
      */
-    if ( !main_track_list )
-        return NULL;
+    __TRACK_CHECK_EXIT_INIT_REQ(NULL);
 
 
     struct_core_track_ptr_t *score =
             (struct_core_track_ptr_t *)malloc(sizeof(struct_core_track_ptr_t));
 
     if ( !score )
-        return NULL;
+        goto ret_error_alloc;
 
     score->flags = flags;
     score->msize = msize;
@@ -278,7 +325,7 @@ track_ptr_t *track_malloc(size_t msize, int flags) {
     void *memory_ptr = malloc(msize);
     if ( !memory_ptr ) {
         free(score);
-        return NULL;
+        goto ret_error_alloc;
     }
 
     /*
@@ -303,11 +350,10 @@ track_ptr_t *track_malloc(size_t msize, int flags) {
     if ( !usrtrack ) {
         free(memory_ptr);
         free(score);
-        return NULL;
+        goto ret_error_alloc;
     }
 
-    usrtrack->last_error = 0;
-    usrtrack->interpretation_type = 0;
+    usrtrack->iter_step = 1;
     usrtrack->__tptr = (void *)score;
 
     score->user_track_data = usrtrack;
@@ -322,7 +368,7 @@ track_ptr_t *track_malloc(size_t msize, int flags) {
         free(usrtrack);
         free(memory_ptr);
         free(score);
-        return NULL;
+        goto ret_error_alloc;
     }
 
     /*
@@ -337,15 +383,42 @@ track_ptr_t *track_malloc(size_t msize, int flags) {
         free(usrtrack);
         free(memory_ptr);
         free(score);
-        return NULL;
+        goto ret_error_alloc;
     }
 
 
-        printf("-1\n");
-
     return usrtrack;
+
+
+
+    /*
+     * переход будет осуществлён в случае, если не удалось выделить
+     * хотя бы один требуемый для корректной работы объём памяти
+     */
+ret_error_alloc:
+    errtrack = ETRACK_ALLOC;
+    return NULL;
 }
 
 
+int track_free(track_ptr_t *ptrack) {
+
+    __TRACK_CHECK_EXIT_INIT_REQ(-1);
+
+    npl_node_t *n = dht_list_remove_node(main_track_list, (npl_node_t *)(ptrack->ptrid));
+
+    if ( !n ) {
+        /* память под эту структуру не выделялась */
+        errtrack = ETRACK_MEM_NOT_FOUND;
+        return -1;
+    }
+
+    __track_main_list_node_data_free(n->data);
+
+    free(n);
+
+
+    return 0;
+}
 
 
