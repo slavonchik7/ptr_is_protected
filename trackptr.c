@@ -6,16 +6,10 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "crc32.h"
 #include "tracklist.h"
 #include "trackptr.h"
-
-#define __TRACK_CHECK_EXIT_INIT_REQ(ret) \
-    do { \
-        if ( !main_track_list ) { \
-            errtrack = ETRACK_INIT_REQUIRED; \
-            return ret; \
-        } \
-    } while ( 0 )
+#include "errcheck.h"
 
 
 
@@ -30,16 +24,9 @@ static const char ETRACK_MEM_NOT_FOUND_MSG[]        = "the passed structure does
 static const char ETRACK_NULL_PTR_PASSED_MSG[]      = "a null pointer was passed to the function";
 static const char ETRACK_INIT_REQUIRED_MSG[]        = "initialization is required, first you should call track_init()";
 static const char ETRACK_ALLOC_MSG[]                = "could not allocate the requested memory or memory for the control structure";
-static const char ETRACK_INIT_TWICE_MSG[]               = "track_init() has already been called before";
+static const char ETRACK_INIT_TWICE_MSG[]           = "track_init() has already been called before";
 
 static const char ETRACK_UNKNOW_ERROR_MSG[]         = "unknown error";
-
-
-/*
-no allocated memory managed by the passed structure was found
-*/
-
-
 
 /*
  * основной список, в котором будут храниться
@@ -70,6 +57,9 @@ track_ptr_t *track_malloc(size_t msize, int flags);
 int track_free(track_ptr_t *ptrack);
 
 int track_overwrite_checksum(track_ptr_t *ptrack);
+
+int track_check_mem(track_ptr_t *ptrack);
+
 
 
 /* структура, которая будет статической  будет скрыта */
@@ -108,7 +98,7 @@ typedef struct {
      * используется, если установлен флаг TRACK_ADDR_PROTECT
      * или TRACK_ADDR_CHECK_SUM
      */
-    unsigned long int checksum;
+    unsigned int checksum;
 
 
     /*
@@ -135,10 +125,9 @@ typedef struct {
  * функция высчитывает контрольную сумму требуемой структуры памяти req
  * и возвращает высчитанное значение
  */
-static int __track_calc_mem_checksum(
+static inline int __track_calc_mem_checksum(
                 struct_core_track_ptr_t *req,
-                unsigned long int *res);
-
+                unsigned int *res);
 
 
 
@@ -146,9 +135,18 @@ static int __track_calc_mem_checksum(
  * проверяет, была ли изменена память после предыдущего её сохранения
  * вернёт 1, если память была изменена
  * вернёт 0, если память не была изменена
- * вернёт -2  случае ошибки в самой функции
  */
 static int __track_memory_changed(struct_core_track_ptr_t *req_check);
+
+
+
+
+
+
+
+
+
+
 
 
 /*
@@ -175,9 +173,6 @@ static void __track_main_list_node_data_free(void *ptr) {
 
     struct_core_track_ptr_t *pscore = (struct_core_track_ptr_t *)ptr;
 
-    if ( pscore != NULL )
-        printf("OK\n");
-
     /* очистка выделяемой для пользователя памяти */
     free( (void *)(pscore->mem_start_addr) );
 
@@ -189,14 +184,27 @@ static void __track_main_list_node_data_free(void *ptr) {
 }
 
 
-static int __track_calc_mem_checksum(
-                struct_core_track_ptr_t *req,
-                unsigned long int *res) {
 
-    /* ДОДЕЛАТЬ !! */
+static inline int __track_memory_changed(struct_core_track_ptr_t *req_check) {
+
+    unsigned int calc_crc;
+
+    __track_calc_mem_checksum(req_check, &calc_crc);
+
+    return (req_check->checksum != calc_crc);
+}
+
+
+
+static inline int __track_calc_mem_checksum(
+                struct_core_track_ptr_t *req,
+                unsigned int *res) {
+
+    *res = Crc32((unsigned char *)req->mem_start_addr, req->msize);
 
     return 0;
 }
+
 
 
 
@@ -274,7 +282,7 @@ int track_init(void) {
 
 int track_destroy(void) {
 
-    __TRACK_CHECK_EXIT_INIT_REQ(-1);
+    __TRACK_CHECK_RET_INIT_REQ(-1);
 
     /* очистка списка */
     dht_list_func_full_free(main_track_list,
@@ -297,7 +305,7 @@ track_ptr_t *track_malloc(size_t msize, int flags) {
      * если главный список не был инициализирован
      * то есть пользователь не вызвал функцию track_init
      */
-    __TRACK_CHECK_EXIT_INIT_REQ(NULL);
+    __TRACK_CHECK_RET_INIT_REQ(NULL);
 
 
     struct_core_track_ptr_t *score =
@@ -403,7 +411,8 @@ ret_error_alloc:
 
 int track_free(track_ptr_t *ptrack) {
 
-    __TRACK_CHECK_EXIT_INIT_REQ(-1);
+    __TRACK_CHECK_RET_INIT_REQ(-1);
+    __TRACK_CHECK_RET_NULL_PTR(ptrack, -1);
 
     npl_node_t *n = dht_list_remove_node(main_track_list, (npl_node_t *)(ptrack->ptrid));
 
@@ -420,5 +429,35 @@ int track_free(track_ptr_t *ptrack) {
 
     return 0;
 }
+
+
+int track_overwrite_checksum(track_ptr_t *ptrack) {
+
+    __TRACK_CHECK_RET_INIT_REQ(-1);
+    __TRACK_CHECK_RET_NULL_PTR(ptrack, -1);
+
+    __track_calc_mem_checksum(
+            (struct_core_track_ptr_t *)ptrack->__tptr,
+            &(((struct_core_track_ptr_t *)ptrack->__tptr)->checksum) );
+
+    return 0;
+}
+
+
+int track_check_mem(track_ptr_t *ptrack) {
+
+    __TRACK_CHECK_RET_INIT_REQ(-1);
+    __TRACK_CHECK_RET_NULL_PTR(ptrack, -1);
+
+    struct_core_track_ptr_t * pscore = (struct_core_track_ptr_t *)ptrack->__tptr;
+
+    __TRACK_CHECK_RET_MEM_CHANGED(pscore, 1);
+    __TRACK_CHECK_WENT_LOWER_LIM(pscore, 1);
+    __TRACK_CHECK_WENT_UPPER_LIM(pscore, 1);
+
+    return 0;
+}
+
+
 
 
