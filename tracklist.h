@@ -149,6 +149,7 @@ static inline npl_node_t *dht_list_remove_node(dht_list_t *l, npl_node_t *n) {
 }
 
 
+
 static inline int dht_list_func_full_free(dht_list_t *l, void func_free(void *)) {
 
     if ( !l )
@@ -156,15 +157,17 @@ static inline int dht_list_func_full_free(dht_list_t *l, void func_free(void *))
 
     npl_node_t *pos = l->head;
 
+
     while ( pos ) {
         npl_node_t *next = pos->next;
 
-        if ( func_free )
+        if (func_free)
             func_free(pos->data);
         free(pos);
 
         pos = next;
     }
+
 
     return 0;
 }
