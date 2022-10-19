@@ -15,7 +15,7 @@
 
 #define __TRACK_CHECK_RET_NULL_PTR(p, ret) \
     do { \
-        if ( !main_track_list ) { \
+        if ( !p ) { \
             errtrack = ETRACK_NULL_PTR_PASSED; \
             return ret; \
         } \
