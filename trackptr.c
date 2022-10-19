@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stddef.h>
 
 #include "crc32.h"
 #include "tracklist.h"
@@ -25,6 +26,7 @@ static const char ETRACK_NULL_PTR_PASSED_MSG[]      = "a null pointer was passed
 static const char ETRACK_INIT_REQUIRED_MSG[]        = "initialization is required, first you should call track_init()";
 static const char ETRACK_ALLOC_MSG[]                = "could not allocate the requested memory or memory for the control structure";
 static const char ETRACK_INIT_TWICE_MSG[]           = "track_init() has already been called before";
+static const char ETRACK_NO_ERROR_MSG[]             = "there are no errors";
 
 static const char ETRACK_UNKNOW_ERROR_MSG[]         = "unknown error";
 
@@ -43,7 +45,7 @@ static dht_list_t *main_track_list = NULL;
 
 
 
-int track_last_error(void);
+int track_error(void);
 const char *track_str_error(int errnum);
 
 
@@ -60,6 +62,8 @@ int track_overwrite_checksum(track_ptr_t *ptrack);
 
 int track_check_mem(track_ptr_t *ptrack);
 
+extern int track_ptr_move(track_ptr_t *ptrack, long int nmove) __attribute__((always_inline));
+//int track_ptr_move(track_ptr_t *ptrack, long int nmove);
 
 
 /* структура, которая будет статической  будет скрыта */
@@ -119,15 +123,17 @@ typedef struct {
 } struct_core_track_ptr_t;
 
 
-
+int get_offset() {
+    return offsetof(struct_core_track_ptr_t, ptr_cur);
+}
 
 /*
  * функция высчитывает контрольную сумму требуемой структуры памяти req
  * и возвращает высчитанное значение
  */
-static inline int __track_calc_mem_checksum(
+static inline int __track_calc_memory_checksum (
                 struct_core_track_ptr_t *req,
-                unsigned int *res);
+                unsigned int *res) __attribute__((always_inline));
 
 
 
@@ -136,14 +142,27 @@ static inline int __track_calc_mem_checksum(
  * вернёт 1, если память была изменена
  * вернёт 0, если память не была изменена
  */
-static int __track_memory_changed(struct_core_track_ptr_t *req_check);
+static inline int __track_memory_changed(struct_core_track_ptr_t *req_check) __attribute__((always_inline));
 
 
+static int __track_ptr_move(struct_core_track_ptr_t *pscore, long int n);
+
+/*
+ * функция иницализирует структуры управления
+ *      выделенной памятью по указателю pmem
+ */
+static track_ptr_t *__track_create_memory_control(void *pmem, size_t msize, int flags);
+
+/*
+ * функция выделяет память под узел для хранения структуры pscore
+ *      и добавляет этот узел в главный список
+ */
+static npl_node_t *__track_push_core_to_main_list(struct_core_track_ptr_t *pscore);
+
+static struct_core_track_ptr_t *__track_struct_core_first_init(void *pmem, size_t msize, int flags);
 
 
-
-
-
+static track_ptr_t *__track_ptr_first_init(struct_core_track_ptr_t *pscore);
 
 
 
@@ -185,18 +204,18 @@ static void __track_main_list_node_data_free(void *ptr) {
 
 
 
-static inline int __track_memory_changed(struct_core_track_ptr_t *req_check) {
+static int __track_memory_changed(struct_core_track_ptr_t *req_check) {
 
     unsigned int calc_crc;
 
-    __track_calc_mem_checksum(req_check, &calc_crc);
+    __track_calc_memory_checksum(req_check, &calc_crc);
 
     return (req_check->checksum != calc_crc);
 }
 
 
 
-static inline int __track_calc_mem_checksum(
+static inline int __track_calc_memory_checksum(
                 struct_core_track_ptr_t *req,
                 unsigned int *res) {
 
@@ -221,6 +240,9 @@ int track_last_error(void) {
 const char *track_str_error(int errnum) {
 
     switch ( errnum ) {
+
+        case ETRACK_NO_ERROR:
+            return ETRACK_NO_ERROR_MSG;
 
         case ETRACK_MEM_WAS_CHANGED:
             return ETRACK_MEM_WAS_CHANGED_MSG;
@@ -299,7 +321,8 @@ int track_destroy(void) {
 
 track_ptr_t *track_malloc(size_t msize, int flags) {
 
-
+    void *memory_ptr;
+    track_ptr_t *usrtrack;
 
     /*
      * если главный список не был инициализирован
@@ -308,96 +331,19 @@ track_ptr_t *track_malloc(size_t msize, int flags) {
     __TRACK_CHECK_RET_INIT_REQ(NULL);
 
 
-    struct_core_track_ptr_t *score =
-            (struct_core_track_ptr_t *)malloc(sizeof(struct_core_track_ptr_t));
+    /*
+     * выделение запрошенной памяти
+     */
 
-    if ( !score )
+    if ( (memory_ptr = malloc(msize)) == NULL )
         goto ret_error_alloc;
 
-    score->flags = flags;
-    score->msize = msize;
-
-
-    /* ПРОТЕСТИРОВАТЬ !!! */
-    if ( TRACK_CHECK_IS_FLAG(flags, TRACK_FLAG_ADDR_CHECK_SUM) ) {
-        unsigned long int chsum;
-
-        if ( __track_calc_mem_checksum(score, &chsum) < 0 ) {
-            free(score);
-            return NULL;
-        }
-
-        score->checksum = chsum;
-    }
-
-    void *memory_ptr = malloc(msize);
-    if ( !memory_ptr ) {
-        free(score);
-        goto ret_error_alloc;
-    }
-
-    /*
-     * расчитываю границы выделенной памяти
-     * score->mem_end_addr указывает на последний байт выделенной памяти
-     * а не на байт, следующий срузу после выделенной памяти
-     */
-    score->mem_start_addr = (addr_t)memory_ptr;
-    score->mem_end_addr = (addr_t)( (char *)memory_ptr + (msize - 1) );
-
-    score->mem_cur_addr = score->mem_start_addr;
-    score->ptr_cur = memory_ptr;
-    score->save_ptr = memory_ptr;
-
-    /*
-     * заполнение пользовательской структуры
-     * и сохранение указателя на неё
-     */
-    track_ptr_t *usrtrack =
-            (track_ptr_t *)malloc(sizeof(track_ptr_t));
-
-    if ( !usrtrack ) {
+    if ( ( usrtrack = __track_create_memory_control(memory_ptr, msize, flags)) == NULL) {
         free(memory_ptr);
-        free(score);
         goto ret_error_alloc;
     }
-
-    usrtrack->iter_step = 1;
-    usrtrack->__tptr = (void *)score;
-
-    score->user_track_data = usrtrack;
-
-
-    /*
-     * добавляю новые пользовательские данные
-     * в главный список
-     */
-    npl_node_t *n = npl_node_alloc((void *)score);
-    if ( !n ) {
-        free(usrtrack);
-        free(memory_ptr);
-        free(score);
-        goto ret_error_alloc;
-    }
-
-    /*
-     * сохраняю указатель на ноду, как идентификатор,
-     * по которому всегда смогу найти данные пользователя
-     */
-    usrtrack->ptrid = (ptr_id_t)n;
-
-
-    if ( dht_list_add_node_tail(main_track_list, n) < 0 ) {
-        free(n);
-        free(usrtrack);
-        free(memory_ptr);
-        free(score);
-        goto ret_error_alloc;
-    }
-
 
     return usrtrack;
-
-
 
     /*
      * переход будет осуществлён в случае, если не удалось выделить
@@ -406,6 +352,118 @@ track_ptr_t *track_malloc(size_t msize, int flags) {
 ret_error_alloc:
     errtrack = ETRACK_ALLOC;
     return NULL;
+}
+
+
+
+static npl_node_t *__track_push_core_to_main_list(struct_core_track_ptr_t *pscore) {
+
+    npl_node_t *n;
+
+    /*
+     * добавляю новые пользовательские данные
+     * в главный список
+     */
+
+    if ( (n = npl_node_alloc((void *)pscore)) == NULL )
+        return NULL;
+
+    /*
+     * сохраняю указатель на ноду, как идентификатор,
+     * по которому всегда смогу найти данные пользователя
+     */
+    pscore->user_track_data->ptrid = (ptr_id_t)n;
+
+
+    if ( dht_list_add_node_tail(main_track_list, n) < 0 ) {
+        free(n);
+        return NULL;
+    }
+
+    return n;
+}
+
+
+
+static track_ptr_t *__track_create_memory_control(void *pmem, size_t msize, int flags) {
+
+
+    struct_core_track_ptr_t *score;
+    track_ptr_t *usrtrack;
+    npl_node_t *n;
+
+    if ( (score = __track_struct_core_first_init(pmem, msize, flags)) == NULL )
+        return NULL;
+
+    if ( (usrtrack = __track_ptr_first_init(score)) == NULL ) {
+        free(score);
+        return NULL;
+    }
+
+    /* расчёт контрольной суммы */
+    if ( TRACK_CHECK_IS_FLAG(flags, TRACK_FLAG_ADDR_CHECK_SUM) )
+        track_overwrite_checksum(usrtrack);
+
+    if ( (n = __track_push_core_to_main_list(score)) == NULL ) {
+        free(usrtrack);
+        free(score);
+        return NULL;
+    }
+
+    return usrtrack;
+}
+
+
+
+static struct_core_track_ptr_t *__track_struct_core_first_init(void *pmem, size_t msize, int flags) {
+
+    struct_core_track_ptr_t *score =
+            (struct_core_track_ptr_t *)malloc(sizeof(struct_core_track_ptr_t));
+
+    if ( !score )
+        return NULL;
+
+    score->flags = flags;
+    score->msize = msize;
+
+    /*
+     * расчитываю границы выделенной памяти
+     * score->mem_end_addr указывает на последний байт выделенной памяти
+     * а не на байт, следующий срузу после выделенной памяти
+     */
+    score->mem_start_addr = (addr_t)pmem;
+    score->mem_end_addr = (addr_t)( (char *)pmem + (msize - 1) );
+
+    score->mem_cur_addr = score->mem_start_addr;
+    score->ptr_cur = pmem;
+    score->save_ptr = pmem;
+
+    return score;
+}
+
+
+
+static track_ptr_t *__track_ptr_first_init(struct_core_track_ptr_t *pscore) {
+
+    /*
+     * заполнение пользовательской структуры
+     * и сохранение указателя на неё
+     */
+    track_ptr_t *usrtrack =
+            (track_ptr_t *)malloc(sizeof(track_ptr_t));
+
+    if ( !usrtrack )
+        return NULL;
+
+
+    usrtrack->iter_step = 1;
+    usrtrack->__tptr = (void *)pscore;
+#ifdef TEST_PTR_ACCESS
+    usrtrack->test_ptr = (void *)pscore->mem_start_addr;
+#endif // TEST_PTR_ACCESS
+    pscore->user_track_data = usrtrack;
+
+    return usrtrack;
 }
 
 
@@ -436,9 +494,25 @@ int track_overwrite_checksum(track_ptr_t *ptrack) {
     __TRACK_CHECK_RET_INIT_REQ(-1);
     __TRACK_CHECK_RET_NULL_PTR(ptrack, -1);
 
-    __track_calc_mem_checksum(
+#define TEST_CHECKSUM
+#ifdef TEST_CHECKSUM
+    uint32_t tcrc;
+    struct_core_track_ptr_t *tscore = (struct_core_track_ptr_t *)ptrack->__tptr;
+
+    __track_calc_memory_checksum(
+            tscore,
+            &tcrc );
+    printf("ptrack old check: %u\n", tscore->checksum);
+    printf("ptrack new check: %u\n", tcrc);
+
+    tscore->checksum = tcrc;
+#else
+
+    __track_calc_memory_checksum(
             (struct_core_track_ptr_t *)ptrack->__tptr,
             &(((struct_core_track_ptr_t *)ptrack->__tptr)->checksum) );
+#endif // TEST_CHECKSUM
+
 
     return 0;
 }
@@ -457,6 +531,44 @@ int track_check_mem(track_ptr_t *ptrack) {
 
     return 0;
 }
+
+
+
+int track_ptr_move(track_ptr_t *ptrack, long int nmove) {
+    __TRACK_CHECK_RET_INIT_REQ(-1);
+    __TRACK_CHECK_RET_NULL_PTR(ptrack, -1);
+
+
+    struct_core_track_ptr_t * pscore = (struct_core_track_ptr_t *)ptrack->__tptr;
+    int flags = pscore->flags;
+
+    if ( TRACK_CHECK_IS_FLAG(flags, TRACK_FLAG_ADDR_CHECK_SUM) )
+        __TRACK_CHECK_RET_MEM_CHANGED(pscore, -1);
+
+    return __track_ptr_move(pscore, nmove);
+}
+
+
+
+static int __track_ptr_move(struct_core_track_ptr_t *pscore, long int n) {
+
+
+    addr_t new_addr = pscore->mem_cur_addr + n;
+    if ( new_addr > pscore->mem_end_addr ) {
+        errtrack = ETRACK_WENT_UPPER_LIMIT;
+        return -1;
+    } else if ( new_addr < pscore->mem_start_addr ) {
+        errtrack = ETRACK_WENT_LOWER_LIMIT;
+        return -1;
+    }
+
+    pscore->mem_cur_addr = new_addr;
+    pscore->ptr_cur = (void *)(new_addr);
+
+    return 0;
+}
+
+
 
 
 

@@ -41,31 +41,19 @@ typedef addr_t ptr_id_t;
 
 
 
-#define for_each_protect_ptr(type, p)
-
-
-#define PTK_INCR_GET(p)
-#define PTK_GET_INCR(p)
-#define PTK_INCR(p)
-#define PTK_GET(p)
-
-#define PTK_CHECK(p)
-#define PTK_CHECK_HNDL(p, h)
-
-
-
 /*
  * возможные значения флага, с которым может инициализироваться структура track_ptr_t
  */
-#define TRACK_FLAGS_NOT_SET         (0b00000000)
-#define TRACK_FLAG_ADDR_PROTECT     (0b00000010)
-#define TRACK_FLAG_ADDR_CHECK_SUM   (0b00000100)
+#define TRACK_FLAGS_NOT_SET         ( 0b00000000 )
+#define TRACK_FLAG_ADDR_PROTECT     ( 0b00000010 )
+#define TRACK_FLAG_ADDR_CHECK_SUM   ( 0b00000100 )
 
 
 
 /*
  * возможные ошибки, во время работы со структурой track_ptr_t и памятью
  */
+#define ETRACK_NO_ERROR                 0
 #define ETRACK_MEM_WAS_CHANGED          13
 #define ETRACK_WENT_LOWER_LIMIT         14
 #define ETRACK_WENT_UPPER_LIMIT         15
@@ -78,9 +66,13 @@ typedef addr_t ptr_id_t;
 #define TRACK_CHECK_IS_FLAG(fset, f) ( ( fset & f ) != 0 )
 
 
+#define TRACK_PTR(ptrack)       ( (void *)( *( (addr_t *)( (char *)(ptrack->__tptr) + 24 ) ) ) )
+#define TRACK_INC(ptrack)       ( track_ptr_move(ptrack,  ptrack->iter_step) )
+#define TRACK_DEC(ptrack)       ( track_ptr_move(ptrack, -(ptrack->iter_step)) )
+#define TRACK_ADD(ptrack, n)    ( track_ptr_move(ptrack,  n) )
+//#define TRACK_ERR()             ( errtrack; errtrack = 0; )
 
-
-
+#define TEST_PTR_ACCESS
 
 
 extern int errtrack;
@@ -105,12 +97,15 @@ typedef struct {
      */
     void *__tptr;
 
+#ifdef TEST_PTR_ACCESS
+    void *test_ptr;
+#endif // TEST_PTR_ACCESS
 
     /*
      * число байт, которым задётся шаг инкремента и декремента
      * для текущей выделенной памяти
      */
-    int iter_step;
+    unsigned int iter_step;
 
 } track_ptr_t;
 
@@ -119,9 +114,9 @@ typedef struct {
 
 /*
  * функция возвращает последнюю произошедшую ошибку errtrack
- * и сбрасывает значение этой переменной
+ *      и сбрасывает значение этой переменной
  */
-extern int track_last_error(void);
+extern int track_error(void);
 
 /*
  * функция возвращает сообщение соответствующее ошибке errnum,
@@ -132,34 +127,49 @@ extern const char *track_str_error(int errnum);
 
 /*
  * функция инициализирует структуры и переменные,
- * необходимые для работы библиотеки
+ *      необходимые для работы библиотеки
+ * вернёт:
+ *       0 в случае успеха
+ *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
 extern int track_init(void);
 
 
 /*
  * функция очищает структуры и переменные (освобождает память),
- * которые были необходимы во время работы библиотеки
+ *      которые были необходимы во время работы библиотеки
+ * вернёт:
+ *       0 в случае успеха
+ *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
 extern int track_destroy(void);
 
 
 /*
  * выделения памяти размером msize байт
- * и инициализация структуры track_ptr_t
+ *      и инициализация структуры track_ptr_t
  * @msize: количество байт для выделения
  * @flags: битовые поля отвечающие за
  *      варианты работы с выделенной памятью
+ * вернёт:
+ *       track_ptr_t * указатель на пользовательскую структуру в случае успеха
+ *       NULL в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
 extern track_ptr_t *track_malloc(size_t msize, int flags);
 
 
+extern track_ptr_t *track_calloc(size_t nmemb, size_t msize, int flags);
+
+
 /*
  * функция очищает выделенную по запросу пользователя память
- * а также очищает память выделенную под управляющие структуры
- * в том числе под переданную ptrack
+ *      а также очищает память выделенную под управляющие структуры
+ *      в том числе под переданную ptrack
  * @ptrack: указатель на пользовательскую структуру данных,
  *      через которую осуществляется управление выделенной памятью
+ * вернёт:
+ *       0 в случае успеха
+ *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
 extern int track_free(track_ptr_t *ptrack);
 
@@ -167,20 +177,40 @@ extern int track_free(track_ptr_t *ptrack);
  * функция пересчитывает контрольную сумму текущей выделенной памяти
  * @ptrack: указатель на пользовательскую структуру данных,
  *      через которую осуществляется управление выделенной памятью
+ * вернёт:
+ *       0 в случае успеха
+ *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
 extern int track_overwrite_checksum(track_ptr_t *ptrack);
 
 /*
  * функция проверяет память на все возможные ошибки
- * в соответствии с флагами, с которыми она была выделена
+ *      в соответствии с флагами, с которыми она была выделена
  * @ptrack: указатель на пользовательскую структуру данных,
  *      через которую осуществляется управление выделенной памятью
  * вернёт:
  *       1 если в какой-то из проверок произошла ошибка
  *       0 если все проверки прошли бех ошибок
- *      -1 в случае ошибки в функции
+ *      -1 в случае ошибки в функции (код ошибки смотерть в errtrack)
  */
 extern int track_check_mem(track_ptr_t *ptrack);
+
+/*
+ *  функция смещает указатель на выделенную память на nmove байт
+ *      nmove может быть как положительным (перемещает вперёд указатель),
+ *      так и отрицательным (сдвигаем назад)
+ *      все действие производятся относительно текущего адреса,
+ *      на который указывает указатель
+ *  @ptrack: указатель на пользовательскую структуру данных,
+ *     через которую осуществляется управление выделенной памятью
+ * вернёт:
+ *       0 в случае успеха
+ *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
+ */
+extern int track_ptr_move(track_ptr_t *ptrack, long int nmove);
+
+
+extern int get_offset();
 
 
 #endif /* TRACKPTR_H */
