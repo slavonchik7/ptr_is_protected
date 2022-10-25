@@ -11,24 +11,8 @@
 #include "tracklist.h"
 #include "trackptr.h"
 #include "errcheck.h"
-
-
-
-
-/*
- *
- */
-static const char ETRACK_MEM_WAS_CHANGED_MSG[]      = "the memory was changed without the knowledge";
-static const char ETRACK_WENT_LOWER_LIMIT_MSG[]     = "went beyond the lower limit of the available allocated address space";
-static const char ETRACK_WENT_UPPER_LIMIT_MSG[]     = "went beyond the upper limit of the available allocated address space";
-static const char ETRACK_MEM_NOT_FOUND_MSG[]        = "the passed structure does not manage any allocated memory";
-static const char ETRACK_NULL_PTR_PASSED_MSG[]      = "a null pointer was passed to the function";
-static const char ETRACK_INIT_REQUIRED_MSG[]        = "initialization is required, first you should call track_init()";
-static const char ETRACK_ALLOC_MSG[]                = "could not allocate the requested memory or memory for the control structure";
-static const char ETRACK_INIT_TWICE_MSG[]           = "track_init() has already been called before";
-static const char ETRACK_NO_ERROR_MSG[]             = "there are no errors";
-
-static const char ETRACK_UNKNOW_ERROR_MSG[]         = "unknown error";
+#include "errmsgs.h"
+#include "errdefs.h"
 
 /*
  * основной список, в котором будут храниться
@@ -62,8 +46,11 @@ int track_overwrite_checksum(track_ptr_t *ptrack);
 
 int track_check_mem(track_ptr_t *ptrack);
 
-extern int track_ptr_move(track_ptr_t *ptrack, long int nmove) __attribute__((always_inline));
-//int track_ptr_move(track_ptr_t *ptrack, long int nmove);
+int track_ptr_move(track_ptr_t *ptrack, long int nmove);
+
+int track_memcpy(track_ptr_t *dest, const track_ptr_t *src, size_t n);
+
+
 
 
 /* структура, которая будет статической  будет скрыта */
@@ -147,30 +134,44 @@ static inline int __track_memory_changed(struct_core_track_ptr_t *req_check) __a
 
 static int __track_ptr_move(struct_core_track_ptr_t *pscore, long int n);
 
+
 /*
- * функция иницализирует структуры управления
- *      выделенной памятью по указателю pmem
+ * функция выделяет память и иницализирует структуры
+ *      управления выделенной памятью по указателю pmem
+ * @pmem: указатель на выделенную память
+ * @msize: размер выделенной памяти
+ * @flags: флаги, заданные для этой памяти
+ * вернёт:
+ *      указатель на инициализированную сруктуру track_ptr_t
+ *      NULL в случае ошибки (код ошибки смотерть в errtrack)
  */
 static track_ptr_t *__track_create_memory_control(void *pmem, size_t msize, int flags);
+
 
 /*
  * функция выделяет память под узел для хранения структуры pscore
  *      и добавляет этот узел в главный список
+ * @pscore: указатель на структуру struct_core_track_ptr_t
+ *      которую требуется поместить в список
+ * вернёт:
+ *      указатель на инициализированную сруктуру npl_node_t
+ *      NULL в случае ошибки (код ошибки смотерть в errtrack)
  */
 static npl_node_t *__track_push_core_to_main_list(struct_core_track_ptr_t *pscore);
 
-static struct_core_track_ptr_t *__track_struct_core_first_init(void *pmem, size_t msize, int flags);
 
+static struct_core_track_ptr_t *__track_struct_core_first_init(void *pmem, size_t msize, int flags);
 
 static track_ptr_t *__track_ptr_first_init(struct_core_track_ptr_t *pscore);
 
-
+static int __track_check_overlay_cur_addr(const track_ptr_t *tp1, const track_ptr_t *tp2, size_t offset);
+static int __track_check_overlay_border_addr(const track_ptr_t *tp1, const track_ptr_t *tp2);
 
 
 
 /*
  * функция очистки памяти для вызова dht_list_func_full_free()
- * очищает память выделенную под структуру struct_core_track_ptr_t
+ *      очищает память выделенную под структуру struct_core_track_ptr_t
  * @ptr: указатель на структуру struct_core_track_ptr_t
  */
 static void __track_struct_core_free(void *ptr) {
@@ -268,6 +269,18 @@ const char *track_str_error(int errnum) {
         case ETRACK_INIT_TWICE:
             return ETRACK_INIT_TWICE_MSG;
 
+        case ETRACK_MEMCPY_MEM_OVERLAP:
+            return ETRACK_MEMCPY_MEM_OVERLAP_MSG;
+
+        case ERTACK_MEMCPY_DEST_UP_LIM:
+            return ERTACK_MEMCPY_DEST_UP_LIM_MSG;
+
+        case ERTACK_MEMCPY_SRC_UP_LIM:
+            return ERTACK_MEMCPY_SRC_UP_LIM_MSG;
+
+        case ETRACK_MEMCPY:
+            return ETRACK_MEMCPY_MSG;
+
         default:
             return ETRACK_UNKNOW_ERROR_MSG;
     }
@@ -275,12 +288,6 @@ const char *track_str_error(int errnum) {
     return "";
 }
 
-
-int track_approve_flags(track_ptr_t *ptrack) {
-
-
-
-}
 
 
 int track_init(void) {
@@ -338,6 +345,10 @@ track_ptr_t *track_malloc(size_t msize, int flags) {
     if ( (memory_ptr = malloc(msize)) == NULL )
         goto ret_error_alloc;
 
+    /*
+     * переходим к добавлению выделенной памяти в общий список
+     * и инициализации управляющих ею структур
+     */
     if ( ( usrtrack = __track_create_memory_control(memory_ptr, msize, flags)) == NULL) {
         free(memory_ptr);
         goto ret_error_alloc;
@@ -400,7 +411,9 @@ static track_ptr_t *__track_create_memory_control(void *pmem, size_t msize, int 
         return NULL;
     }
 
-    /* расчёт контрольной суммы */
+    /*
+     * расчёт контрольной суммы, если такой флаг задан
+     */
     if ( TRACK_CHECK_IS_FLAG(flags, TRACK_FLAG_ADDR_CHECK_SUM) )
         track_overwrite_checksum(usrtrack);
 
@@ -552,8 +565,8 @@ int track_ptr_move(track_ptr_t *ptrack, long int nmove) {
 
 static int __track_ptr_move(struct_core_track_ptr_t *pscore, long int n) {
 
-
     addr_t new_addr = pscore->mem_cur_addr + n;
+
     if ( new_addr > pscore->mem_end_addr ) {
         errtrack = ETRACK_WENT_UPPER_LIMIT;
         return -1;
@@ -569,7 +582,94 @@ static int __track_ptr_move(struct_core_track_ptr_t *pscore, long int n) {
 }
 
 
+/*  */
+/* ПРОТЕСТИРОВАТЬ */
+/*  */
+int track_memcpy(track_ptr_t *dest, const track_ptr_t *src, size_t n) {
+
+    __TRACK_CHECK_RET_INIT_REQ(-1);
+    __TRACK_CHECK_RET_NULL_PTR(dest, -1);
+    __TRACK_CHECK_RET_NULL_PTR(src, -1);
+
+    struct_core_track_ptr_t *dest_score = (struct_core_track_ptr_t *)dest->__tptr;
+    struct_core_track_ptr_t *src_score = (struct_core_track_ptr_t *)src->__tptr;
+
+    /* проверка выхода за границы памяти dest */
+    if ( (dest_score->mem_cur_addr + n) > dest_score->mem_end_addr ) {
+        errtrack = ERTACK_MEMCPY_DEST_UP_LIM;
+        return -1;
+    }
+
+    /* проверка выхода за границы памяти src */
+    if ( (src_score->mem_cur_addr + n) > src_score->mem_end_addr ) {
+        errtrack = ERTACK_MEMCPY_SRC_UP_LIM;
+        return -1;
+    }
+
+    /* проверка, перекрываются ли участки памяти */
+    if ( __track_check_overlay_cur_addr(dest, src, n) ) {
+        errtrack = ETRACK_MEMCPY_MEM_OVERLAP;
+        return -1;
+    }
+
+    if ( memcpy((void *)dest_score->ptr_cur, (void *)src_score->ptr_cur, n) == NULL ) {
+        errtrack = ETRACK_MEMCPY;
+        return -1;
+    }
+
+    return 0;
+}
 
 
+/*  */
+/* ПРОТЕСТИРОВАТЬ */
+/*  */
+static int __track_check_overlay_cur_addr(const track_ptr_t *tp1, const track_ptr_t *tp2, size_t offset) {
+
+    struct_core_track_ptr_t *t1_score = (struct_core_track_ptr_t *)tp1->__tptr;
+    struct_core_track_ptr_t *t2_score = (struct_core_track_ptr_t *)tp2->__tptr;
+
+
+    /*
+     * проверка, находится ли адрес, который содержит src
+     *  между начальным и конечным адресом, который содержит dest
+     */
+    if (
+        ( (t1_score->mem_cur_addr >= t2_score->mem_cur_addr) &&
+          (t1_score->mem_cur_addr <= (t2_score->mem_cur_addr + offset)) )
+            ||
+        ( ((t1_score->mem_cur_addr + offset) >= t2_score->mem_cur_addr) &&
+          ((t1_score->mem_cur_addr + offset) <= (t2_score->mem_cur_addr + offset)) )
+       )
+    {
+        return 1;
+    } else
+        return 0;
+
+}
+
+
+/*  */
+/* ПРОТЕСТИРОВАТЬ */
+/*  */
+static int __track_check_overlay_border_addr(const track_ptr_t *tp1, const track_ptr_t *tp2) {
+
+    struct_core_track_ptr_t *t1_score = (struct_core_track_ptr_t *)tp1->__tptr;
+    struct_core_track_ptr_t *t2_score = (struct_core_track_ptr_t *)tp2->__tptr;
+
+
+    if (
+        ( (t1_score->mem_start_addr >= t2_score->mem_start_addr) &&
+          (t1_score->mem_start_addr <= t2_score->mem_end_addr) )
+            ||
+        ( (t1_score->mem_end_addr >= t2_score->mem_start_addr) &&
+          (t1_score->mem_end_addr <= t2_score->mem_end_addr) )
+       )
+    {
+        return 1;
+    } else
+        return 0;
+
+}
 
 
