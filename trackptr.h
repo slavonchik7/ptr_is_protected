@@ -18,50 +18,14 @@ typedef addr_t ptr_id_t;
 
 
 
-
-/*
-
-
-
-    ДОБАВИТЬ СИСТЕМУ ОЧИСТКИ ВЫДЕЛЕННОЙ ПРИ ПОМОЩИ ЭТОГО МЕТОДА ПАМЯТИ,
-        В СЛУЧАЕ, ЕСЛИ ПРОГРАММА БУДЕТ ЗАВЕРШИНА ПО СИГНАЛУ SIGINT ИЛИ SIGTERM
-        СДЕЛАТЬ ДЛЯ ЭТОЙ ОПЦИИ ОТДЕЛЬНЫЙ ФЛАГ ???????
-
-
-
-
-
-*/
-
-
-/* коды ошибок и другая конфеденциальная информация указателя будет хранться в статическом списке внутри trackptr.c */
-
-/* в каждой доступной пользователю структуре будет id выделенной пользователю структуры,
- * который будет являться адресом полной скрытой структуры в статическом списке скрытых структур */
-
-
-
 /*
  * возможные значения флага, с которым может инициализироваться структура track_ptr_t
  */
-#define TRACK_FLAGS_NOT_SET         ( 0b00000000 )
-#define TRACK_FLAG_ADDR_PROTECT     ( 0b00000010 )
-#define TRACK_FLAG_ADDR_CHECK_SUM   ( 0b00000100 )
+#define TRACK_FLAGS_NOT_SET         ( 0x0 )
+#define TRACK_FLAG_ADDR_PROTECT     ( 0x2 )
+#define TRACK_FLAG_ADDR_CHECK_SUM   ( 0x4 )
 
 
-
-/*
- * возможные ошибки, во время работы со структурой track_ptr_t и памятью
- */
-#define ETRACK_NO_ERROR                 0
-#define ETRACK_MEM_WAS_CHANGED          13
-#define ETRACK_WENT_LOWER_LIMIT         14
-#define ETRACK_WENT_UPPER_LIMIT         15
-#define ETRACK_MEM_NOT_FOUND            16
-#define ETRACK_NULL_PTR_PASSED          17
-#define ETRACK_INIT_REQUIRED            18
-#define ETRACK_ALLOC                    19
-#define ETRACK_INIT_TWICE               20
 
 #define TRACK_CHECK_IS_FLAG(fset, f) ( ( fset & f ) != 0 )
 
@@ -70,8 +34,8 @@ typedef addr_t ptr_id_t;
 #define TRACK_INC(ptrack)       ( track_ptr_move(ptrack,  ptrack->iter_step) )
 #define TRACK_DEC(ptrack)       ( track_ptr_move(ptrack, -(ptrack->iter_step)) )
 #define TRACK_ADD(ptrack, n)    ( track_ptr_move(ptrack,  n) )
-//#define TRACK_ERR()             ( errtrack; errtrack = 0; )
 
+/* временное определение */
 #define TEST_PTR_ACCESS
 
 
@@ -211,6 +175,21 @@ extern int track_ptr_move(track_ptr_t *ptrack, long int nmove);
 
 
 extern int get_offset();
+
+
+/*
+ * функция работает как memset, только проверяет, перекрывается память или нет,
+ *      если перекрывается, вернёт ошибку
+ * @dest: указатуль на структуру track_ptr_t, содержащую память,
+ *      в которую трбуется скопировать
+ * @src: указатуль на структуру track_ptr_t, содержащую память,
+ *      из которой трбуется скопировать
+ * @n: число байт, которые требуется скопировать
+ * вернёт:
+ *       0 в случае успеха
+ *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
+ */
+extern int track_memcpy(track_ptr_t *dest, const track_ptr_t *src, size_t n);
 
 
 #endif /* TRACKPTR_H */
