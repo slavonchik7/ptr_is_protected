@@ -21,5 +21,7 @@
 #define ERTACK_MEMCPY_DEST_UP_LIM       23
 #define ERTACK_MEMCPY_SRC_UP_LIM        24
 
+#define ETRACK_IS_EMPTY                 31
+
 
 #endif /* ERRDEFS_H */

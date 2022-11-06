@@ -2,7 +2,7 @@
 #ifndef TRACKLIST_H
 #define TRACKLIST_H
 
-
+#include <stdlib.h>
 
 
 
@@ -25,29 +25,27 @@ typedef struct double_head_tail_list {
 
 #define DHT_LIST_INIT(l) \
     do { \
-        l = (dht_list_t *)malloc(sizeof(dht_list_t)); \
-        if (l) \
-            l->cnt = 0; \
-            l->head = NULL; \
-            l->tail = NULL; \
+        (l) = (dht_list_t *)malloc(sizeof(dht_list_t)); \
+        if ( (l) ) \
+            (l)->cnt = 0; \
+            (l)->head = NULL; \
+            (l)->tail = NULL; \
     } while(0)
-
-
 
 #define DHT_LIST_DESTROY(l) \
     do { \
-        free(l); \
+        free( (l) ); \
         l = NULL; \
     } while(0)
 
 
 #define NPL_NODE_INIT(n) \
     do { \
-        n = (npl_node_t *)malloc(sizeof(npl_node_t)); \
-        if (n) \
-            n->data = NULL; \
-            n->next = NULL; \
-            n->prev = NULL; \
+        (n) = (npl_node_t *)malloc(sizeof(npl_node_t)); \
+        if ( (n) ) \
+            (n)->data = NULL; \
+            (n)->next = NULL; \
+            (n)->prev = NULL; \
     } while(0)
 
 
@@ -55,14 +53,28 @@ typedef struct double_head_tail_list {
 
 
 #define dht_list_while_each_start(l, pos) \
-        pos = l->head; \
-        while (pos) { \
+        pos = (l)->head; \
+        while ( (pos) ) { \
 
-#define dht_list_while_each_end \
-            pos = pos->next; \
+#define dht_list_while_each_end() \
+            (pos) = (pos)->next; \
         }
 
-static inline void dht_list_remove(npl_node_t *next, npl_node_t *prev) {
+
+static inline void __dht_list_add_head_exist(dht_list_t *l, npl_node_t *n) {
+        l->tail->next = n;
+        n->next = NULL;
+        n->prev = l->tail;
+        l->tail = n;
+}
+
+static inline void __dht_list_add_head_not_exist(dht_list_t *l, npl_node_t *n) {
+        n->next = NULL;
+        n->prev = NULL;
+        l->head = l->tail = n;
+}
+
+static inline void __dht_list_remove(npl_node_t *next, npl_node_t *prev) {
 
   next->prev = prev;
   prev->next = next;
@@ -76,16 +88,10 @@ static inline int dht_list_add_node_tail(dht_list_t *l, npl_node_t *n) {
     if ( !l )
         return -1;
 
-    if ( !l->head ) {
-        n->next = NULL;
-        n->prev = NULL;
-        l->head = l->tail = n;
-    } else {
-        l->tail->next = n;
-        n->next = NULL;
-        n->prev = l->tail;
-        l->tail = n;
-    }
+    if ( !l->head )
+        __dht_list_add_head_not_exist(l, n);
+    else
+        __dht_list_add_head_exist(l, n);
 
     ++(l->cnt);
 
@@ -99,10 +105,17 @@ static inline int dht_list_add_node_head(dht_list_t *l, npl_node_t *n) {
     if ( !l )
         return -1;
 
+    if ( !l->head ) {
+        n->next = NULL;
+        n->prev = NULL;
+        l->head = l->tail = n;
+    } else {
+
     n->next = l->head;
     n->prev = NULL;
     l->head->prev = n;
     l->head = n;
+    }
 
     ++(l->cnt);
 
@@ -140,7 +153,7 @@ static inline npl_node_t *dht_list_remove_node(dht_list_t *l, npl_node_t *n) {
         l->tail->prev = NULL;
 
     } else {
-        dht_list_remove(n->next, n->prev);
+        __dht_list_remove(n->next, n->prev);
     }
 
     --(l->cnt);
@@ -168,6 +181,23 @@ static inline int dht_list_func_full_free(dht_list_t *l, void func_free(void *))
         pos = next;
     }
 
+
+    return 0;
+}
+
+static inline int dht_list_func_node_cmp_proc(dht_list_t *l, int func_cmp(void *), void func_proc(void *)) {
+
+    if ( !l )
+        return -1;
+
+    if ( !func_cmp )
+        return -1;
+
+    npl_node_t *pos;
+    dht_list_while_each_start(l, pos)
+        if ( func_cmp(pos->data) == 1 )
+            func_proc(pos->data);
+    dht_list_while_each_end()
 
     return 0;
 }

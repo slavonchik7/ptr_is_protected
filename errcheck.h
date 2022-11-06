@@ -49,4 +49,13 @@
     } while ( 0 )
 
 
+#define __TRACK_CHECK_RET_IS_EMPTY(pscore, ret) \
+    do { \
+        if ( TRACK_CHECK_IS_FLAG(pscore->flags, _TRACK_FLAG_EMPTY) ) { \
+            errtrack = ETRACK_IS_EMPTY; \
+            return ret; \
+        } \
+    } while ( 0 )
+
+
 #endif /* ERRCHECK_H */

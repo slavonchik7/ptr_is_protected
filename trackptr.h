@@ -4,18 +4,7 @@
 #define TRACKPTR_H
 
 #include <stdint.h>
-
-
-#if __WORDSIZE == 64
-    typedef unsigned long int addr64_t;
-    typedef addr64_t addr_t;
-#else
-    typedef unsigned long int addr32_t;
-    typedef addr32_t addr_t;
-#endif /* __WORDSIZE */
-
-typedef addr_t ptr_id_t;
-
+#include "maddr.h"
 
 
 /*
@@ -30,10 +19,10 @@ typedef addr_t ptr_id_t;
 #define TRACK_CHECK_IS_FLAG(fset, f) ( ( fset & f ) != 0 )
 
 
-#define TRACK_PTR(ptrack)       ( (void *)( *( (addr_t *)( (char *)(ptrack->__tptr) + 24 ) ) ) )
-#define TRACK_INC(ptrack)       ( track_ptr_move(ptrack,  ptrack->iter_step) )
-#define TRACK_DEC(ptrack)       ( track_ptr_move(ptrack, -(ptrack->iter_step)) )
-#define TRACK_ADD(ptrack, n)    ( track_ptr_move(ptrack,  n) )
+#define TRACK_PTR(ptrack)       ( (void *)( *( (addr_t *)( (char *)ptrack->__tptr + 24 ) ) ) )
+#define TRACK_INC(ptrack)       ( track_move_ptr(ptrack,  ptrack->iter_step) )
+#define TRACK_DEC(ptrack)       ( track_move_ptr(ptrack, -(ptrack->iter_step)) )
+#define TRACK_ADD(ptrack, n)    ( track_move_ptr(ptrack,  n) )
 
 /* временное определение */
 #define TEST_PTR_ACCESS
@@ -52,7 +41,7 @@ typedef struct {
      * пользователь всегда сможет найти саму структуру
      * в общем списке, и получить информацию о ней
      */
-    ptr_id_t ptrid;
+    ptr_id_t __ptrid;
 
 
     /*
@@ -171,9 +160,9 @@ extern int track_check_mem(track_ptr_t *ptrack);
  *       0 в случае успеха
  *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
-extern int track_ptr_move(track_ptr_t *ptrack, long int nmove);
+extern int track_move_ptr(track_ptr_t *ptrack, long int nmove);
 
-
+extern void *get_list();
 extern int get_offset();
 
 
@@ -192,4 +181,25 @@ extern int get_offset();
 extern int track_memcpy(track_ptr_t *dest, const track_ptr_t *src, size_t n);
 
 
+/*
+ * функция перемещает указатель структы tset на структуру tnew,
+ *      старый указатель tset перемещается в told
+ *      если told равен NULL, то память по старому указателю tset очищается
+ *      и контроль над ней прикращается
+ * @tset: указатель на структуру track_ptr_t, содержащую указатель,
+ *      который в последствии будет указывать на tnew (текущий адрес, а не начальный)
+ * @tnew: указатель на структуру track_ptr_t
+ * @told: указатель на структуру track_ptr_t,
+ *      в которую будет сохранена старая память tset
+ * вернёт:
+ *       0 в случае успеха
+ *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
+ */
+extern int track_set_ptr(track_ptr_t *tset, track_ptr_t *tnew, track_ptr_t *told);
+
+
+extern track_ptr_t *track_make_empty();
+
 #endif /* TRACKPTR_H */
+
+
