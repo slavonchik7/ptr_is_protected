@@ -5,6 +5,8 @@
 #include "tracklist.h"
 #include "trackptr.h"
 
+
+
 /* ДОДЕЛАТЬ ПРОТЕСТИРОВАТЬ */
 typedef struct {
 
@@ -18,6 +20,9 @@ typedef struct {
     dht_list_t *links;
 
 } lmblock_t;
+
+
+static inline lmblock_t *__lmblock_init() __attribute__((always_inline));
 
 
 static inline lmblock_t *__lmblock_init() {

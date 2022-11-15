@@ -10,6 +10,10 @@
 
 #include "tcore.h"
 #include "tfuncs.h"
+#include "errdefs.h"
+#include "errmsgs.h"
+#include "errcheck.h"
+#include "crc32.h"
 
 /*
  * основной список, в котором будут храниться
@@ -344,7 +348,7 @@ int track_set_ptr(track_ptr_t *tset, track_ptr_t *tnew, track_ptr_t *told) {
     struct_core_track_ptr_t *pscore_set = (struct_core_track_ptr_t *)tset->__tptr;
     struct_core_track_ptr_t *pscore_new = (struct_core_track_ptr_t *)tnew->__tptr;
 
-    /* если tnew контролирует никакую память, выходим */
+    /* если tnew не контролирует никакую память, выходим */
     __TRACK_CHECK_RET_IS_EMPTY(pscore_new, -1);
 
 

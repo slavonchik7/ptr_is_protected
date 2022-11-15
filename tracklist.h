@@ -54,7 +54,7 @@ typedef struct double_head_tail_list {
 
 #define dht_list_while_each_start(l, pos) \
         pos = (l)->head; \
-        while ( (pos) ) { \
+        while ( (pos) ) {
 
 #define dht_list_while_each_end() \
             (pos) = (pos)->next; \
