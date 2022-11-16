@@ -166,19 +166,19 @@ int __track_review_mem_links_list(
 
 
 
-static void __track_links_list_node_data_remove(
+void __track_links_list_node_data_remove(
                 struct_core_track_ptr_t *ptr) {
     ptr->links_shared_mem_block = NULL;
 }
 
-static void __track_calc_memory_checksum(
+void __track_calc_memory_checksum(
                 struct_core_track_ptr_t *req,
                 unsigned int *res) {
 
     *res = Crc32((unsigned char *)req->mem_start_addr, req->msize);
 }
 
-static int __track_memory_changed(
+int __track_memory_changed(
                 struct_core_track_ptr_t *req_check) {
 
     unsigned int calc_crc;
