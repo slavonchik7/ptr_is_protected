@@ -53,7 +53,7 @@ int track_memcpy(track_ptr_t *dest, const track_ptr_t *src, size_t n);
 
 int track_set_ptr(track_ptr_t *tset, track_ptr_t *tnew, track_ptr_t *told);
 
-track_ptr_t *track_make_empty();
+track_ptr_t *track_make_empty(void);
 
 
 
@@ -389,7 +389,7 @@ int track_set_ptr(track_ptr_t *tset, track_ptr_t *tnew, track_ptr_t *told) {
 }
 
 
-track_ptr_t *track_make_empty() {
+track_ptr_t *track_make_empty(void) {
     track_ptr_t *usrtrack;
 
     /*
