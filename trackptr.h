@@ -18,20 +18,34 @@
 
 #define TRACK_CHECK_IS_FLAG(fset, f) ( ( fset & f ) != 0 )
 
+#define TRACK_SET_TYPE(ptrack, type) (ptrack->iter_step = sizeof((type)))
 
+#ifdef NO_TRACKPTR
+#define TRACK_PTR(ptrack)       ( ptrack->__tptr )
+#define TRACK_INC(ptrack)       ( track_move_ptr(ptrack,  ptrack->iter_step) )
+#define TRACK_DEC(ptrack)       ( track_move_ptr(ptrack, -(ptrack->iter_step)) )
+#define TRACK_ADD(ptrack, n)    ( track_move_ptr(ptrack,  n) )
+#else
 #define TRACK_PTR(ptrack)       ( (void *)( *( (addr_t *)( (char *)ptrack->__tptr + 24 ) ) ) )
 #define TRACK_INC(ptrack)       ( track_move_ptr(ptrack,  ptrack->iter_step) )
 #define TRACK_DEC(ptrack)       ( track_move_ptr(ptrack, -(ptrack->iter_step)) )
 #define TRACK_ADD(ptrack, n)    ( track_move_ptr(ptrack,  n) )
+#endif
 
 /* временное определение */
 #define TEST_PTR_ACCESS
 
 
+#ifndef NO_TRACKPTR
 extern int errtrack;
+#endif
 
-
-
+#ifdef NO_TRACKPTR
+typedef struct {
+    void *__tptr;
+    unsigned int iter_step;
+} track_ptr_t;
+#else
 /* структура, с через которую будет работать пользователь */
 typedef struct {
 
@@ -61,7 +75,7 @@ typedef struct {
     unsigned int iter_step;
 
 } track_ptr_t;
-
+#endif /* NO_TRACKPTR */
 
 
 
@@ -69,13 +83,26 @@ typedef struct {
  * функция возвращает последнюю произошедшую ошибку errtrack
  *      и сбрасывает значение этой переменной
  */
+#ifdef NO_TRACKPTR
+inline __attribute__((always_inline)) int track_error(void) {
+    return 0;
+}
+#else
 extern int track_error(void);
+#endif
+
 
 /*
  * функция возвращает сообщение соответствующее ошибке errnum,
  * @errnum: значение полученое из функции track_last_error
  */
+#ifdef NO_TRACKPTR
+inline __attribute__((always_inline)) const char *track_str_error(int errnum) {
+    return "";
+}
+#else
 extern const char *track_str_error(int errnum);
+#endif
 
 
 /*
@@ -85,7 +112,13 @@ extern const char *track_str_error(int errnum);
  *       0 в случае успеха
  *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
+#ifdef NO_TRACKPTR
+inline __attribute__((always_inline)) int track_init(void) {
+    return 0;
+}
+#else
 extern int track_init(void);
+#endif
 
 
 /*
@@ -95,7 +128,13 @@ extern int track_init(void);
  *       0 в случае успеха
  *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
+#ifdef NO_TRACKPTR
+inline __attribute__((always_inline)) int track_destroy(void) {
+    return 0;
+}
+#else
 extern int track_destroy(void);
+#endif
 
 
 /*
@@ -109,6 +148,7 @@ extern int track_destroy(void);
  *       NULL в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
 extern track_ptr_t *track_malloc(size_t msize, int flags);
+
 
 
 extern track_ptr_t *track_calloc(size_t nmemb, size_t msize, int flags);
@@ -134,7 +174,13 @@ extern int track_free(track_ptr_t *ptrack);
  *       0 в случае успеха
  *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
+#ifdef NO_TRACKPTR
+inline __attribute__((always_inline)) int track_overwrite_checksum(track_ptr_t *ptrack) {
+    return 0;
+}
+#else
 extern int track_overwrite_checksum(track_ptr_t *ptrack);
+#endif
 
 /*
  * функция проверяет память на все возможные ошибки
@@ -146,7 +192,14 @@ extern int track_overwrite_checksum(track_ptr_t *ptrack);
  *       0 если все проверки прошли бех ошибок
  *      -1 в случае ошибки в функции (код ошибки смотерть в errtrack)
  */
+#ifdef NO_TRACKPTR
+inline __attribute__((always_inline)) int track_check_mem(track_ptr_t *ptrack) {
+    return 0;
+}
+#else
 extern int track_check_mem(track_ptr_t *ptrack);
+#endif
+
 
 /*
  *  функция смещает указатель на выделенную память на nmove байт
@@ -160,7 +213,14 @@ extern int track_check_mem(track_ptr_t *ptrack);
  *       0 в случае успеха
  *      -1 в случае какой-либо ошибки (код ошибки смотерть в errtrack)
  */
+#ifdef NO_TRACKPTR
+inline __attribute__((always_inline)) int track_move_ptr(track_ptr_t *ptrack, long int nmove) {
+    ptrack->__tptr = (void *)((char *)ptrack->__tptr + nmove);
+    return 0;
+}
+#else
 extern int track_move_ptr(track_ptr_t *ptrack, long int nmove);
+#endif
 
 extern void *get_list();
 extern int get_offset();
@@ -198,7 +258,7 @@ extern int track_memcpy(track_ptr_t *dest, const track_ptr_t *src, size_t n);
 extern int track_set_ptr(track_ptr_t *tset, track_ptr_t *tnew, track_ptr_t *told);
 
 
-extern track_ptr_t *track_make_empty();
+extern track_ptr_t *track_make_empty(void);
 
 #endif /* TRACKPTR_H */
 
