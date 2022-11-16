@@ -22,15 +22,12 @@
 
 #ifdef NO_TRACKPTR
 #define TRACK_PTR(ptrack)       ( ptrack->__tptr )
-#define TRACK_INC(ptrack)       ( track_move_ptr(ptrack,  ptrack->iter_step) )
-#define TRACK_DEC(ptrack)       ( track_move_ptr(ptrack, -(ptrack->iter_step)) )
-#define TRACK_ADD(ptrack, n)    ( track_move_ptr(ptrack,  n) )
 #else
 #define TRACK_PTR(ptrack)       ( (void *)( *( (addr_t *)( (char *)ptrack->__tptr + 24 ) ) ) )
+#endif
 #define TRACK_INC(ptrack)       ( track_move_ptr(ptrack,  ptrack->iter_step) )
 #define TRACK_DEC(ptrack)       ( track_move_ptr(ptrack, -(ptrack->iter_step)) )
 #define TRACK_ADD(ptrack, n)    ( track_move_ptr(ptrack,  n) )
-#endif
 
 /* временное определение */
 #define TEST_PTR_ACCESS
