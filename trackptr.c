@@ -23,6 +23,13 @@
 extern dht_list_t *main_track_list;
 
 
+
+/*
+ * указывает смещение ptr_cur в структуре struct_core_track_ptr_t,
+ * которое следует добавить к track_ptr_t::__tptr, чтобы получить текущий указатель
+ */
+const addr_t __track_struct_ptr_offset = offsetof(struct_core_track_ptr_t, ptr_cur);
+
 /*
  * переменная, для хранения кода последней произошедшей ошибки
  */
@@ -31,7 +38,7 @@ extern dht_list_t *main_track_list;
 
 
 int track_error(void);
-const char *track_str_error(int errnum);
+//const char *track_str_error(int errnum);
 
 
 
@@ -80,7 +87,7 @@ int track_last_error(void) {
 }
 
 
-const char *track_str_error(int errnum) {
+extern inline __attribute__((always_inline)) const char *track_str_error(int errnum) {
 
     switch ( errnum ) {
 

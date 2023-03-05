@@ -20,10 +20,12 @@
 
 #define TRACK_SET_TYPE(ptrack, type) (ptrack->iter_step = sizeof((type)))
 
+extern const addr_t __track_struct_ptr_offset;
+
 #ifdef NO_TRACKPTR
 #define TRACK_PTR(ptrack)       ( ptrack->__tptr )
 #else
-#define TRACK_PTR(ptrack)       ( (void *)( *( (addr_t *)( (char *)ptrack->__tptr + 24 ) ) ) )
+#define TRACK_PTR(ptrack)       ( (void *)( *( (addr_t *)( (char *)ptrack->__tptr + __track_struct_ptr_offset ) ) ) )
 #endif
 #define TRACK_INC(ptrack)       ( track_move_ptr(ptrack,  ptrack->iter_step) )
 #define TRACK_DEC(ptrack)       ( track_move_ptr(ptrack, -(ptrack->iter_step)) )
@@ -44,7 +46,7 @@ typedef struct {
 } track_ptr_t;
 #else
 /* структура, с через которую будет работать пользователь */
-typedef struct {
+typedef struct track_ptr_t {
 
 
     /*
@@ -89,6 +91,7 @@ extern int track_error(void);
 #endif
 
 
+
 /*
  * функция возвращает сообщение соответствующее ошибке errnum,
  * @errnum: значение полученое из функции track_last_error
@@ -98,7 +101,7 @@ inline __attribute__((always_inline)) const char *track_str_error(int errnum) {
     return "";
 }
 #else
-extern const char *track_str_error(int errnum);
+const char *track_str_error(int errnum);
 #endif
 
 
